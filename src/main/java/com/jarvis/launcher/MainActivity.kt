@@ -415,7 +415,56 @@ class MainActivity : Activity() {
             }
             word in listOf("search", "google") && rest.isNotEmpty() -> { say("Searching for $rest."); web(rest) }
             l.contains("flashlight") || l.contains("torch") -> torch(!l.contains("off"))
-            l == "time" || l.endsWith(" the time") || l.endsWith("what time is it") ->
+                        l == "time" || l.endsWith(" the time") || l.endsWith("what time is it") ->
                 say("It’s " + SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date()) + ", $name.")
             l == "date" || l.endsWith(" date") || l.endsWith("what day is it") ->
-                say(
+                say(SimpleDateFormat("EEEE, d MMMM yyyy", Locale.getDefault()).format(Date()))
+            l == "battery" || l.contains("my battery") || l.contains("battery level") -> {
+                val bm = getSystemService(BATTERY_SERVICE) as BatteryManager
+                say("Battery is at ${bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)} percent.")
+            }
+            l == "settings" -> settings()
+            else -> ai(t)
+        }
+    }
+
+    private fun web(q: String) =
+        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=" + Uri.encode(q))))
+
+    private fun torch(on: Boolean) {
+        try {
+            val cm = getSystemService(CAMERA_SERVICE) as CameraManager
+            cm.setTorchMode(cm.cameraIdList[0], on)
+            say(if (on) "Flashlight on." else "Flashlight off.")
+        } catch (e: Exception) { say("The flashlight isn’t available right now.") }
+    }
+
+    // Anything Jarvis doesn't recognise goes to Claude (if you've added an API key)
+    private fun ai(q: String) {
+        if (key.isEmpty()) {
+            say("Searching the web. Add your Claude API key in settings for proper answers."); web(q); return
+        }
+        reactor.active = true; reply.text = "Thinking…"
+        thread {
+            try {
+                val msgs = JSONArray()
+                hist.takeLast(6).forEach { msgs.put(JSONObject().put("role", it.first).put("content", it.second)) }
+                msgs.put(JSONObject().put("role", "user").put("content", q))
+                val body = JSONObject().put("model", model).put("max_tokens", 400)
+                    .put("system", "$persona Address the user as $name.").put("messages", msgs)
+                val c = URL("https://api.anthropic.com/v1/messages").openConnection() as HttpURLConnection
+                c.requestMethod = "POST"; c.doOutput = true; c.connectTimeout = 15000; c.readTimeout = 60000
+                c.setRequestProperty("content-type", "application/json")
+                c.setRequestProperty("x-api-key", key)
+                c.setRequestProperty("anthropic-version", "2023-06-01")
+                c.outputStream.use { it.write(body.toString().toByteArray()) }
+                val ok = c.responseCode in 200..299
+                val txt = (if (ok) c.inputStream else c.errorStream).bufferedReader().use { it.readText() }
+                if (!ok) throw Exception(JSONObject(txt).optJSONObject("error")?.optString("message") ?: "HTTP ${c.responseCode}")
+                val a = JSONObject(txt).getJSONArray("content").getJSONObject(0).getString("text")
+                hist.add("user" to q); hist.add("assistant" to a)
+                say(a)
+            } catch (e: Exception) { say("I couldn’t reach the AI. ${e.message}".take(200)) }
+        }
+    }
+}
