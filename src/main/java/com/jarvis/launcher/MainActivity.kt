@@ -395,27 +395,42 @@ class MainActivity : Activity() {
 
     // Add your own commands here, above the final `else`
     private fun handle(raw: String) {
-        val t = raw.trim(); if (t.isEmpty()) return
-        val l = t.lowercase()
-        input.setText(""); input.clearFocus()
+        val t = raw.trim()
+        if (t.isEmpty()) return
+
+        val l = t.lowercase(Locale.getDefault())
+        input.setText("")
+        input.clearFocus()
         val word = l.substringBefore(" ")
         val rest = l.substringAfter(" ", "").trim()
+
         when {
             word in listOf("open", "launch") && rest.isNotEmpty() -> {
-                val a = allApps.firstOrNull { it.label.lowercase() == rest }
-                    ?: allApps.firstOrNull { it.label.lowercase().contains(rest) }
-                if (a != null) { say("Opening ${a.label}."); launch(a) }
-                else if (key.isNotEmpty()) ai(t)
-                else say("I couldn’t find $rest on this phone.")
+                val app = allApps.firstOrNull { it.label.lowercase(Locale.getDefault()) == rest }
+                    ?: allApps.firstOrNull { it.label.lowercase(Locale.getDefault()).contains(rest) }
+                if (app != null) {
+                    say("Opening ${app.label}.")
+                    launch(app)
+                } else if (key.isNotEmpty()) {
+                    ai(t)
+                } else {
+                    say("I couldn’t find $rest on this phone.")
+                }
             }
+
             word in listOf("call", "dial") -> {
-                val n = rest.filter { it.isDigit() || it == '+' }
-                if (n.isEmpty()) ai(t)
-                else { say("Dialling."); startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:$n"))) }
+                val number = rest.filter { it.isDigit() || it == '+' }
+                if (number.isEmpty()) {
+                    ai(t)
+                } else {
+                    say("Dialling.")
+                    startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:$number")))
+                }
             }
-            word in listOf("search", "google") && rest.isNotEmpty() -> { say("Searching for $rest."); web(rest) }
-            l.contains("flashlight") || l.contains("torch") -> torch(!l.contains("off"))
-            l == "time" || l.endsWith(" the time") || l.endsWith("what time is it") ->
-                say("It’s " + SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date()) + ", $name.")
-            l == "date" || l.endsWith(" date") || l.endsWith("what day is it") ->
-                say(
+
+            word in listOf("search", "google") && rest.isNotEmpty() -> {
+                say("Searching for $rest.")
+                web(rest)
+            }
+
+            l.contains("flashlight") || l.contains("torch") -
